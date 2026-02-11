@@ -1,0 +1,115 @@
+<script>
+    // Get references to HTML elements
+    const keyButtons = document.querySelectorAll('.key-btn');
+    const keyDisplay = document.getElementById('keyDisplay');
+    const activateInput = document.getElementById('activateKeyInput');
+    const activateBtn = document.getElementById('activateBtn');
+    const scanBtn = document.getElementById('scanIdBtn');
+    const discordInput = document.getElementById('discordIdInput');
+    const scanResult = document.getElementById('scanResult');
+    const boosterBox = document.getElementById('boosterBox');
+    const boosterCount = document.getElementById('boosterCount');
+    const topKeyStatus = document.querySelector('.key-status');
+
+    // ---------- GENERATE KEY (real) ----------
+    keyButtons.forEach(btn => {
+        btn.addEventListener('click', async function() {
+            let duration = this.dataset.days; // '1', '7', '30', '90', '9999', 'booster'
+            // Convert to readable names
+            const map = {
+                '1': '1day',
+                '7': '1week',
+                '30': '1month',
+                '90': '3months',
+                '9999': 'lifetime',
+                'booster': 'booster'
+            };
+            const dur = map[duration] || '1day';
+            
+            const res = await fetch('/api/generate-key', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ duration: dur })
+            });
+            const data = await res.json();
+            if (data.success) {
+                keyDisplay.innerHTML = `<i class="fas fa-ticket"></i> Generated: <span style="background:#003d4d; padding:6px 16px; border-radius:30px;">${data.key}</span>`;
+                activateInput.value = data.key;
+            }
+        });
+    });
+
+    // ---------- ACTIVATE KEY (real) ----------
+    async function activateKey(key) {
+        const res = await fetch('/api/activate-key', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key })
+        });
+        const data = await res.json();
+        if (data.success) {
+            // Update UI based on key type
+            if (data.type === 'booster') {
+                topKeyStatus.innerHTML = '<i class="fas fa-bolt"></i> BOOSTER · 10/day';
+                boosterBox.style.display = 'flex';
+                boosterCount.innerText = 10 - data.scansLeft;
+            } else {
+                topKeyStatus.innerHTML = `<i class="fas fa-crown"></i> ${data.type.toUpperCase()} · UNLIMITED`;
+                boosterBox.style.display = 'none';
+            }
+            keyDisplay.innerHTML = `<i class="fas fa-check-circle" style="color:#5effb2;"></i> Activated: ${key.substring(0,16)}...`;
+            return true;
+        } else {
+            alert('Activation failed: ' + data.error);
+            return false;
+        }
+    }
+
+    activateBtn.addEventListener('click', () => {
+        const key = activateInput.value.trim();
+        if (key) activateKey(key);
+    });
+
+    // ---------- SCAN DISCORD ID (real) ----------
+    scanBtn.addEventListener('click', async () => {
+        const discordId = discordInput.value.trim();
+        if (!discordId) { alert('Enter a Discord ID'); return; }
+        if (!/^\d{17,19}$/.test(discordId)) { alert('Invalid Discord ID format (17-19 digits)'); return; }
+
+        const apiKey = activateInput.value.trim(); // currently activated key
+        if (!apiKey) { alert('Please activate a license key first'); return; }
+
+        const res = await fetch('/api/scan', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ discordId, apiKey })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            // Build result HTML
+            let html = `<i class="fas fa-shield-halded" style="color: #0ff;"></i> <strong>Scan Result for ${data.username}#${data.discriminator}</strong><br>`;
+            if (data.cheater || data.inLeakServers) {
+                html += `<span class="cheater-warning" style="display:block; margin-top:10px; background:#4a1e1e; padding:10px; border-radius:16px;">
+                         <i class="fas fa-exclamation-triangle" style="color: #ff9966;"></i> ⚠️ User detected in suspicious servers!</span>`;
+                if (data.cheater) html += `<div style="margin-top:6px;">🔴 Cheat Servers: <strong>${data.cheatServerCount}</strong></div>`;
+                if (data.inLeakServers) html += `<div>📁 Leak Servers: <strong>${data.leakServerCount}</strong></div>`;
+            } else {
+                html += `<div style="color:#aaffb0; margin-top:10px;"><i class="fas fa-check-circle"></i> No cheater activity found. Clean ID.</div>`;
+            }
+            html += `<div style="margin-top:14px; border-top:1px solid #226677; padding-top:10px;">🔍 Scans left: ${data.scansLeft}</div>`;
+            scanResult.style.display = 'block';
+            scanResult.innerHTML = html;
+
+            // Update booster counter if applicable
+            if (data.keyType === 'booster') {
+                boosterCount.innerText = 10 - data.scansLeft;
+            }
+        } else {
+            alert('Scan failed: ' + data.error);
+        }
+    });
+
+    // Prefill with a demo ID
+    discordInput.value = '1202310138388807743';
+</script>
